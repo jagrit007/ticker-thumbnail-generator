@@ -1,0 +1,71 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  thumbnail-generator:
+    build: .
+    container_name: thumbnail-generator
+    restart: unless-stopped
+    user: "1001:1001"
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Kolkata
+    
+    # Internal port only - not exposed to host
+    expose:
+      - "8000"
+    
+    # Volumes for persistent storage
+    volumes:
+      - ./assets/logos:/app/assets/logos:ro          # Read-only logos
+      - ./assets/brand_logos:/app/assets/brand_logos:ro  # Read-only brand logos
+      - ./assets/fonts:/app/assets/fonts:ro          # Read-only fonts
+      - thumbnails_data:/app/static/thumbnails       # Persistent thumbnail storage
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Security options
+    # security_opt:
+    #   - no-new-privileges:true
+    
+    # Read-only root filesystem (except for writable volumes)
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes
+volumes:
+  thumbnails_data:
+    driver: local
+
+# Network configuration - connects to external network only
+networks:
+  default:
+    external:
+      name: swag_default
