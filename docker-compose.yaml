@@ -22,7 +22,7 @@ services:
       - ./assets/logos:/app/assets/logos:ro          # Read-only logos
       - ./assets/brand_logos:/app/assets/brand_logos:ro  # Read-only brand logos
       - ./assets/fonts:/app/assets/fonts:ro          # Read-only fonts
-      - thumbnails_data:/app/static/thumbnails       # Persistent thumbnail storage
+      - ./static/thumbnails:/app/static/thumbnails       # Persistent thumbnail storage
     
     # Resource limits
     deploy:
@@ -60,9 +60,9 @@ services:
         max-file: "3"
 
 # Named volumes
-volumes:
-  thumbnails_data:
-    driver: local
+# volumes:
+#   thumbnails_data:
+#     driver: local
 
 # Network configuration - connects to external network only
 networks:
