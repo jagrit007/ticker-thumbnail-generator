@@ -346,24 +346,28 @@ class ThumbnailGenerator:
         # Setup paths
         logo_path = config.logo_folder / f"{ticker.upper()}.NSE.png"
         
-        # Alternative logo formats
-        if not logo_path.exists():
+        # Check for alternative logo formats
+        logo_exists = False
+        if logo_path.exists():
+            logo_exists = True
+        else:
             for ext in ['.png', '.jpg', '.jpeg', '.svg']:
                 alt_path = config.logo_folder / f"{ticker.upper()}{ext}"
                 if alt_path.exists():
                     logo_path = alt_path
+                    logo_exists = True
                     break
-        
-        if not logo_path.exists():
-            raise HTTPException(status_code=404, detail=f"Logo not found for ticker {ticker}")
         
         # Get design configuration
         typography = self.design_system.TYPOGRAPHY[style_preset]
         layout = self.design_system.LAYOUTS[style_preset]
         
-        # Determine color scheme
-        dominant_color = self.get_dominant_color(logo_path)
-        use_dark_bg = not self.is_color_dark(dominant_color)
+        if logo_exists:
+            dominant_color = self.get_dominant_color(logo_path)
+            use_dark_bg = not self.is_color_dark(dominant_color)
+        else:
+            # Default to random color scheme when no logo
+            use_dark_bg = random.choice([True, False])
         
         gradient_type = "dark" if use_dark_bg else "light"
         bg_start, bg_end = random.choice(self.design_system.GRADIENTS[style_preset][gradient_type])
@@ -378,20 +382,31 @@ class ThumbnailGenerator:
         gradient_style = "radial" if style_preset == "vibrant" else "linear"
         self.create_gradient_background(img, bg_start, bg_end, gradient_style)
         
-        # Calculate layout
-        logo_area_width = int(config.canvas_width * layout["logo_area_ratio"])
-        logo_max_size = int(logo_area_width * layout["logo_max_ratio"])
-        padding = layout["padding"]
-        
-        # Add company logo
-        logo = Image.open(logo_path).convert("RGBA")
-        logo.thumbnail((logo_max_size, logo_max_size), Image.LANCZOS)
-        
-        logo_x = (logo_area_width - logo.width) // 2
-        logo_y = (config.canvas_height - logo.height) // 2
-        
-        self.add_logo_with_effects(img, logo_path, (logo_x, logo_y), logo_max_size, 
-                                 add_shadow=True, add_border=(style_preset == "corporate"))
+        if logo_exists:
+            # Original layout with logo
+            logo_area_width = int(config.canvas_width * layout["logo_area_ratio"])
+            logo_max_size = int(logo_area_width * layout["logo_max_ratio"])
+            padding = layout["padding"]
+            
+            # Add company logo
+            logo = Image.open(logo_path).convert("RGBA")
+            logo.thumbnail((logo_max_size, logo_max_size), Image.LANCZOS)
+            
+            logo_x = (logo_area_width - logo.width) // 2
+            logo_y = (config.canvas_height - logo.height) // 2
+            
+            self.add_logo_with_effects(img, logo_path, (logo_x, logo_y), logo_max_size, 
+                                    add_shadow=True, add_border=(style_preset == "corporate"))
+            
+            # Text area starts after logo
+            text_area_x = logo_area_width + padding
+            text_area_width = config.canvas_width - text_area_x - padding
+        else:
+            # Centered layout without logo
+            padding = layout["padding"] * 2  # More padding for centered layout
+            text_area_x = padding
+            text_area_width = config.canvas_width - (padding * 2)
+            
         
         # Add brand logo
         brand_logo_suffix = "WHITE" if use_dark_bg else "BLACK"
@@ -405,8 +420,8 @@ class ThumbnailGenerator:
             img.paste(brand_logo, (brand_logo_x, brand_logo_y), brand_logo)
         
         # Setup text area
-        text_area_x = logo_area_width + padding
-        text_area_width = config.canvas_width - text_area_x - padding
+        # text_area_x = logo_area_width + padding
+        # text_area_width = config.canvas_width - text_area_x - padding
         
         # Load fonts
         font_bold_path = self.font_manager.get_font_path(font_family, "bold")
@@ -418,13 +433,26 @@ class ThumbnailGenerator:
         # Draw text
         draw = ImageDraw.Draw(img)
         
-        # Company name
-        name_y = int(config.canvas_height * 0.25)
-        draw.text((text_area_x, name_y), stock_name, fill=subtitle_color, font=font_subtitle)
-        
-        # Main headline
-        headline = self.clean_title(prompt)
-        headline_y = name_y + typography["subtitle_size"] + 20
+        if logo_exists:
+            # Original positioning (left-aligned after logo)
+            name_y = int(config.canvas_height * 0.25)
+            draw.text((text_area_x, name_y), stock_name, fill=subtitle_color, font=font_subtitle)
+            
+            headline = self.clean_title(prompt)
+            headline_y = name_y + typography["subtitle_size"] + 20
+            
+        else:
+            # Centered positioning
+            name_y = int(config.canvas_height * 0.35)  # More centered vertically
+            
+            # Center the stock name
+            name_bbox = draw.textbbox((0, 0), stock_name, font=font_subtitle)
+            name_width = name_bbox[2] - name_bbox[0]
+            name_x = (config.canvas_width - name_width) // 2
+            draw.text((name_x, name_y), stock_name, fill=subtitle_color, font=font_subtitle)
+            
+            headline = self.clean_title(prompt)
+            headline_y = name_y + typography["subtitle_size"] + 30
         
         # Wrap text
         lines = self.wrap_text(headline, font_title, text_area_width)
@@ -433,7 +461,16 @@ class ThumbnailGenerator:
         line_height = typography["title_size"] + typography["spacing"]
         for i, line in enumerate(lines):
             y_position = headline_y + i * line_height
-            draw.text((text_area_x, y_position), line, fill=text_color, font=font_title)
+            
+            if logo_exists:
+                # Left-aligned (original behavior)
+                draw.text((text_area_x, y_position), line, fill=text_color, font=font_title)
+            else:
+                # Center-aligned for no logo case
+                line_bbox = draw.textbbox((0, 0), line, font=font_title)
+                line_width = line_bbox[2] - line_bbox[0]
+                line_x = (config.canvas_width - line_width) // 2
+                draw.text((line_x, y_position), line, fill=text_color, font=font_title)
         
         # Generate unique filename
         unique_id = str(uuid.uuid4())[:8]
